@@ -28,6 +28,43 @@ const endpoints = {
 let hasErrors = false
 let latestGames = []
 
+// Retry transient network failures, rate limits, and server errors. Each attempt
+// gets its own timeout; only known transient HTTP statuses are retried.
+async function fetchWithRetry(url, options, label, maxAttempts = 3) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let response
+    try {
+      response = await fetch(url, {
+        ...options,
+        signal: AbortSignal.timeout(20_000)
+      })
+    } catch (error) {
+      if (attempt === maxAttempts) {
+        throw new Error(`${label} request failed after ${maxAttempts} attempts: ${error.message}`)
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000 * (2 ** (attempt - 1))))
+      continue
+    }
+
+    if (response.status !== 429 && response.status < 500) return response
+
+    if (attempt === maxAttempts) {
+      await response.body?.cancel().catch(() => {})
+      throw new Error(`${label} returned HTTP ${response.status} after ${maxAttempts} attempts`)
+    }
+
+    const retryAfter = Number(response.headers.get('retry-after'))
+    const delay = Number.isFinite(retryAfter) && retryAfter > 0
+      ? Math.min(10_000, retryAfter * 1000)
+      : 1000 * (2 ** (attempt - 1))
+
+    await response.body?.cancel().catch(() => {})
+    await new Promise(resolve => setTimeout(resolve, delay))
+  }
+
+  throw new Error(`${label} request failed`)
+}
+
 /**
  * Checks in one account across the requested games, recording each result via log().
  * A falsy `games` reuses the previous account's list, so multiple accounts sharing
@@ -91,8 +128,12 @@ async function run(cookie, games) {
 
     let res, json
     try {
-      res = await fetch(url, { method: 'POST', headers, body })
+      res = await fetchWithRetry(url, { method: 'POST', headers, body }, `HoYoLAB ${game}`)
+      if (!res.ok) throw new Error(`HoYoLAB returned HTTP ${res.status}`)
       json = await res.json()
+      if (!json || typeof json !== 'object' || !('retcode' in json)) {
+        throw new Error('HoYoLAB returned an unexpected response')
+      }
     } catch (e) {
       log('error', game, `Request failed: ${e.message}`)
       continue
@@ -114,8 +155,7 @@ async function run(cookie, games) {
       '-10002': 'Error not found. You haven\'t played this game'
     }
 
-    log('debug', game, `Headers`, Object.fromEntries(res.headers))
-    log('debug', game, `Response`, json)
+    log('debug', game, `API returned retcode ${code}`)
 
     if (code in errorCodes) {
       log('error', game, `${errorCodes[code]}`)
@@ -174,15 +214,17 @@ async function discordWebhookSend() {
   }
   discordMsg += messages.map(msg => `${icon[msg.type] ?? ''} ${msg.string}`).join('\n')
 
-  const res = await fetch(discordWebhook, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      content: discordMsg
-    })
-  })
+  let res
+  try {
+    res = await fetchWithRetry(discordWebhook, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: discordMsg })
+    }, 'Discord notification')
+  } catch (error) {
+    log('error', `Discord notification failed: ${error.message}`)
+    return
+  }
 
   if (res.status === 204) {
     console.log('Successfully sent message to Discord webhook!')
@@ -203,11 +245,17 @@ async function telegramSend() {
 
   const text = messages.map(msg => `${icon[msg.type] ?? ''} ${msg.string}`).join('\n')
 
-  const res = await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: telegramChat, text })
-  })
+  let res
+  try {
+    res = await fetchWithRetry(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: telegramChat, text })
+    }, 'Telegram notification')
+  } catch (error) {
+    log('error', `Telegram notification failed: ${error.message}`)
+    return
+  }
 
   if (res.ok) {
     console.log('Successfully sent message to Telegram!')
