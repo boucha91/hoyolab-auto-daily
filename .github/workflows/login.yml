@@ -2,10 +2,16 @@ name: Daily check in
 
 on:
   schedule:
-    - cron: "0 22 * * *" # scheduled at 06:00 (UTC+8) everyday
+    # Primary run plus a second daily safety attempt if GitHub delays/drops the first.
+    - cron: "17 22 * * *"
+    - cron: "17 23 * * *"
   workflow_dispatch:
 
 permissions: {}
+
+concurrency:
+  group: hoyolab-daily-check-in
+  cancel-in-progress: false
 
 jobs:
   check-in:
@@ -35,9 +41,11 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           HOYOLAB_LANG: ${{ vars.HOYOLAB_LANG }}
+
   workflow-keepalive:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     permissions:
       actions: write
     steps:
