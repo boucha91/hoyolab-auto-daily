@@ -31,6 +31,9 @@ jobs:
           node-version: "24"
           package-manager-cache: false
 
+      - name: Validate JavaScript syntax
+        run: node --check index.js
+
       - name: Check In
         run: node index.js
         env:
