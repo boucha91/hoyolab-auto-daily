@@ -10,16 +10,20 @@ permissions: {}
 jobs:
   check-in:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
       - name: Clone Repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
+          package-manager-cache: false
 
       - name: Check In
         run: node index.js
