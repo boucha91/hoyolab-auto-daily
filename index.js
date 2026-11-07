@@ -55,7 +55,7 @@ async function fetchWithRetry(url, options, label, maxAttempts = 3) {
 
     const retryAfter = Number(response.headers.get('retry-after'))
     const delay = Number.isFinite(retryAfter) && retryAfter > 0
-      ? Math.min(10_000, retryAfter * 1000)
+      ? Math.min(60_000, retryAfter * 1000)
       : 1000 * (2 ** (attempt - 1))
 
     await response.body?.cancel().catch(() => {})
