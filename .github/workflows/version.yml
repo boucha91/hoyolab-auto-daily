@@ -10,21 +10,26 @@ permissions: {}
 jobs:
   check-version:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
       - name: Clone Repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Fetch package.json from original repo
         run: |
-          curl -o remote-package.json \
+          curl --fail --silent --show-error --location \
+               --output remote-package.json \
                https://raw.githubusercontent.com/sglkc/hoyolab-auto-daily/master/package.json
 
       - name: Compare versions
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
+          set -euo pipefail
           LOCAL_VERSION=$(jq -r .version package.json)
           REMOTE_VERSION=$(jq -r .version remote-package.json)
           echo "Local version: $LOCAL_VERSION"
@@ -33,10 +38,11 @@ jobs:
           if [ "$(printf '%s\n' "$REMOTE_VERSION" "$LOCAL_VERSION" | sort -V | head -n1)" != "$REMOTE_VERSION" ]; then
             echo "Repository version is outdated. Do sync your fork!"
 
-            if [ ! -z "$DISCORD_WEBHOOK" ]; then
-              curl -H "Content-Type: application/json" \
-                   -d '{"content": "(INFO) New version released. Your repository is outdated."}' \
-                   $DISCORD_WEBHOOK
+            if [ -n "$DISCORD_WEBHOOK" ]; then
+              curl --fail --silent --show-error \
+                   --url "$DISCORD_WEBHOOK" \
+                   -H "Content-Type: application/json" \
+                   --data-binary '{"content": "(INFO) New version released. Your repository is outdated."}'
             fi
 
             exit 1
