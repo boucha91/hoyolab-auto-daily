@@ -2,7 +2,7 @@ name: Latest version
 
 on:
   schedule:
-    - cron: "0 18 * * *" # scheduled at 06:00 (UTC+8) everyday
+    - cron: "23 18 * * *" # avoid the top of the hour
   workflow_dispatch:
 
 permissions: {}
