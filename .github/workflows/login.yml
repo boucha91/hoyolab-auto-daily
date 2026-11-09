@@ -2,9 +2,8 @@ name: Daily check in
 
 on:
   schedule:
-    # Primary run plus a second daily safety attempt if GitHub delays/drops the first.
-    - cron: "17 22 * * *"
-    - cron: "17 23 * * *"
+    # One daily run at approximately 18:00 Morocco time (17:00 UTC currently).
+    - cron: "0 17 * * *"
   workflow_dispatch:
 
 permissions: {}
